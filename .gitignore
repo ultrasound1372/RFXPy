@@ -1,5 +1,6 @@
 build/
 env/
+__pycache__/
 *.c
 *.pyd
 *.wav

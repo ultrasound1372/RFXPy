@@ -3,7 +3,8 @@
 # cython port of Spotfx2b include.pbi, the purebasic include for Dragonflame RFXGen
 # This is done with cython to achieve better performance, since we're just manipulating c types like ints, doubles, and arrays.
 
-from libc.stdlib cimport rand, RAND_MAX
+from libc.stdlib cimport rand, RAND_MAX, srand
+from libc cimport time
 from cpython.mem cimport PyMem_Malloc, PyMem_Realloc, PyMem_Free # So I'm not creating a humungus array on the stack
 import wave, io # To return a wave file as a bytestring
 import base64, struct # To pack and unpack the RFXGen structure format
@@ -21,6 +22,7 @@ cdef extern from *:
     double pow(double _X, double _Y)
     double sin(double _X)
     double clamp(double d, double min, double max)
+    double round(double _X)
     bint isinf(double _val)
     cdef double PI "M_PI"
     cdef double INFINITY "INFINITY"
@@ -31,8 +33,16 @@ GenBitsS=struct.Struct("<i23f2b")
 # Eventually we're going to have to encode an array of floats into 16-bit integers to plop into a wave file.
 pcm16=struct.Struct("<h")
 
+srand(<unsigned int>time.time(NULL))
+
 cpdef double Rnd(double a=1.0):
     return a*(<double>rand()/<double>RAND_MAX)
+
+cpdef bint RndBool():
+    return <bint>round(Rnd(1.0))
+
+cpdef double mrnd():
+    return Rnd(0.1)-0.05
 
 cdef class GenBits:
     cdef public:
@@ -59,6 +69,47 @@ cdef class GenBits:
         =self.p_repeat_speed=self.p_arp_speed=self.p_arp_mod=0.0
         self.p_env_sustain=0.3
         self.p_env_decay=0.4
+    
+    @classmethod
+    def randomize(cls):
+        cdef GenBits ret=cls()
+        ret.wave_type=<int>round(Rnd(3))
+        ret.p_base_freq=pow(Rnd(2.0)-1.0,2.0)
+        if RndBool():
+            ret.p_base_freq=pow(Rnd(2.0)-1.0,3.0)+0.5
+        ret.p_freq_limit=0
+        ret.p_freq_ramp=pow(Rnd(2.0)-1.0,5.0)
+        if ret.p_base_freq>0.7 and ret.p_freq_ramp>0.2:
+            ret.p_freq_ramp=-ret.p_freq_ramp
+        if ret.p_base_freq<0.2 and ret.p_freq_ramp<-0.05:
+            ret.p_freq_ramp=-ret.p_freq_ramp
+        ret.p_freq_dramp=pow(Rnd(2.0)-1.0,3.0)
+        ret.p_duty=Rnd(2.0)-1.0
+        ret.p_duty_ramp=pow(Rnd(2.0)-1.0,3.0)
+        ret.p_vib_strength=pow(Rnd(2.0)-1.0,3.0)
+        ret.p_vib_speed=Rnd(2.0)-1.0
+        ret.p_vib_delay=Rnd(2.0)-1.0
+        ret.p_env_attack=pow(Rnd(2.0)-1.0,3.0)
+        ret.p_env_sustain=pow(Rnd(2.0)-1.0,2.0)
+        ret.p_env_decay=Rnd(2.0)-1.0
+        ret.p_env_punch=pow(Rnd(0.8),2.0)
+        if ret.p_env_attack+ret.p_env_sustain+ret.p_env_decay<0.2:
+            ret.p_env_sustain+=(0.2+Rnd(0.3))
+            ret.p_env_decay+=(0.2+Rnd(0.3))
+        ret.p_lpf_resonance=Rnd(2.0)-1.0
+        ret.p_lpf_freq=1.0-pow(Rnd(1.0),3.0)
+        ret.p_lpf_ramp=pow(Rnd(2.0)-1.0,3.0)
+        if ret.p_lpf_freq<0.1 and ret.p_lpf_ramp<-0.05:
+            ret.p_lpf_ramp=-ret.p_lpf_ramp
+        ret.p_hpf_freq=pow(Rnd(1.0),5.0)
+        ret.p_hpf_ramp=pow(Rnd(2.0)-1.0,5.0)
+        ret.p_pha_offset=pow(Rnd(2.0)-1.0,3.0)
+        ret.p_pha_ramp=pow(Rnd(2.0)-1.0,3.0)
+        ret.p_repeat_speed=Rnd(2.0)-1.0
+        ret.p_arp_speed=Rnd(2.0)-1.0
+        ret.p_arp_mod=Rnd(2.0)-1.0
+        ret.SuperSample=<int>(round(Rnd(14))+2)
+        return ret
 
 # These variables aren't in the exact same order as in the PB code due to type groupings. I think casting will sort things out, though.
 cdef class SFXRWave(GenBits):
@@ -67,7 +118,6 @@ cdef class SFXRWave(GenBits):
         double rfperiod, square_duty, square_slide, env_vol, fphase, fdphase, fltp, fltdp, fltw, fltw_d, fltdmp, fltphp, flthp, flthp_d, vib_phase, vib_speed, vib_amp
         double fperiod, fmaxperiod, fslide, fdslide, arp_mod
         char filter_on # May actually be bint
-        unsigned char Mutate
         int SFX_env_length[4]
         double* SFX_phaser_buffer
         double SFX_noise_buffer[33]
@@ -79,6 +129,55 @@ cdef class SFXRWave(GenBits):
     
     def __dealloc__(self):
         PyMem_Free(self.SFX_phaser_buffer)
+    
+    @classmethod
+    def randomize(cls):
+        cdef ret=cls()
+        ret.load(super().randomize().save())
+        return ret
+    
+    @classmethod
+    cpdef fromGenBits(cls,gb):
+        cdef SFXRWave ret=cls()
+        ret.load(gb.save())
+        return ret
+    
+    cpdef toGenBits(self):
+        cdef GenBits ret=GenBits()
+        ret.load(self.save())
+        return ret
+    
+    def __copy__(self):
+        ret=SFXRWave()
+        ret.load(self.save())
+        return ret
+    
+    cpdef mutate(self):
+        cdef SFXRWave ret=self.__copy__()
+        if RndBool(): ret.p_base_freq+=mrnd()
+        if RndBool(): ret.p_freq_ramp+=mrnd()
+        if RndBool(): ret.p_freq_dramp+=mrnd()
+        if RndBool(): ret.p_duty+=mrnd()
+        if RndBool(): ret.p_duty_ramp+=mrnd()
+        if RndBool(): ret.p_vib_strength+=mrnd()
+        if RndBool(): ret.p_vib_speed+=mrnd()
+        if RndBool(): ret.p_vib_delay+=mrnd()
+        if RndBool(): ret.p_env_attack+=mrnd()
+        if RndBool(): ret.p_env_sustain+=mrnd()
+        if RndBool(): ret.p_env_decay+=mrnd()
+        if RndBool(): ret.p_env_punch+=mrnd()
+        if RndBool(): ret.p_lpf_resonance+=mrnd()
+        if RndBool(): ret.p_lpf_freq+=mrnd()
+        if RndBool(): ret.p_lpf_ramp+=mrnd()
+        if RndBool(): ret.p_hpf_freq+=mrnd()
+        if RndBool(): ret.p_hpf_ramp+=mrnd()
+        if RndBool(): ret.p_pha_offset+=mrnd()
+        if RndBool(): ret.p_pha_ramp+=mrnd()
+        if RndBool(): ret.p_repeat_speed+=mrnd()
+        if RndBool(): ret.p_arp_speed+=mrnd()
+        if RndBool(): ret.p_arp_mod+=mrnd()
+        return ret
+    
     
     # Actually calling the load method this inherits should just plop in the value nice and easy!
     # Let's make the processing functions methods in here instead, so I don't have to public all the variables for internal functions anyway
@@ -146,7 +245,7 @@ cdef class SFXRWave(GenBits):
     # This will also return a bytes buffer instead of a pointer to one, since we assume you're calling this from within python.
     cpdef bytes Create(self):
         cdef:
-            int Mutate=0, i=0, si=0, T=0, SLength=0, Alength=0, MyLoop=0, Sample_Rate
+            int i=0, si=0, T=0, SLength=0, Alength=0, MyLoop=0, Sample_Rate
             double rfperiod, ssample=0, sample=0, fp, pp, PowTmp, Sample_Div, SuperSample
             bint dirty=0 # For infinity emulation
         Sample_Rate=44100
@@ -273,6 +372,7 @@ cdef class SFXRWave(GenBits):
         wf=io.BytesIO()
         # Now let's make a wave file to return
         wfw=wave.open(wf,'wb')
+        wfw.setnchannels(1)
         wfw.setnchannels(1)
         wfw.setsampwidth(2)
         wfw.setframerate(Sample_Rate)
