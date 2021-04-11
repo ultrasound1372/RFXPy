@@ -15,14 +15,22 @@ cdef extern from *:
     #define _USE_MATH_DEFINES
     #include <math.h>
     double clamp(double d, double min, double max) {
-        const double t = d < min ? min : d;
-        return t > max ? max : t;
+        return d < min ? min : d > max ? max : d;
+    }
+    double frac(double x) {
+        return x-floor(x);
     }
     """
     double pow(double _X, double _Y)
     double sin(double _X)
     double clamp(double d, double min, double max)
+    double frac(double x)
     double round(double _X)
+    double sqrt(double _X)
+    int abs(int _X)
+    double fabs(double _X)
+    double ceil(double _X)
+    double floor(double _X)
     bint isinf(double _val)
     cdef double PI "M_PI"
     cdef double INFINITY "INFINITY"
@@ -121,6 +129,8 @@ cdef class SFXRWave(GenBits):
         int SFX_env_length[4]
         double* SFX_phaser_buffer
         double SFX_noise_buffer[33]
+        double SFX_pink_noise_buffer[7]
+        unsigned short SFX_LFSR
     
     def __cinit__(self):
         self.SFX_phaser_buffer=<double*>PyMem_Malloc(1025*sizeof(double))
@@ -236,17 +246,21 @@ cdef class SFXRWave(GenBits):
             Loop=0
             for Loop in range(33):
                 self.SFX_noise_buffer[Loop]=Rnd(2.0)-1
+            Loop=0
+            for Loop in range(7):
+                self.SFX_pink_noise_buffer[Loop]=0
+            self.SFX_LFSR=1
             self.rep_time=0
             self.rep_limit= <int>(pow(1.0 - self.p_repeat_speed, 2.0) * 20000 + 32)
             if self.p_repeat_speed==0.0: self.rep_limit=0
-            
+    
     # The signature for Create will be slightly different.
     # We won't pass the encoded data, since you should have sent that into this object, memcopy, or SaveFile.
     # This will also return a bytes buffer instead of a pointer to one, since we assume you're calling this from within python.
     cpdef bytes Create(self):
         cdef:
             int i=0, si=0, T=0, SLength=0, Alength=0, MyLoop=0, Sample_Rate
-            double rfperiod, ssample=0, sample=0, fp, pp, PowTmp, Sample_Div, SuperSample
+            double rfperiod, ssample=0, sample=0, fp, pp, PowTmp, Sample_Div, SuperSample, prevfp=0, curfp=0, prevRandom=0, curRandom=0, ntemp=0
             bint dirty=0 # For infinity emulation
         Sample_Rate=44100
         self.playing_sample=True
@@ -315,7 +329,7 @@ cdef class SFXRWave(GenBits):
                 self.phase+=1
                 if self.phase>=self.period:
                     self.phase%=self.period
-                    if self.wave_type==3:
+                    if self.wave_type>=3 and self.wave_type<=5:
                         i=0
                         for i in range(32):
                             self.SFX_noise_buffer[i]=Rnd(2.0)-1.0
@@ -332,6 +346,36 @@ cdef class SFXRWave(GenBits):
                     sample=sin(fp*2.0*PI)
                 elif self.wave_type==3: # noise
                     sample=self.SFX_noise_buffer[<int>(self.phase*32 / self.period)]
+                elif self.wave_type==4: # pink noise (from JFXR)
+                    curfp=self.phase*32/self.period
+                    #if curfp < prevfp:
+                    prevRandom=curRandom
+                    ntemp=self.SFX_noise_buffer[<int>curfp]
+                    self.SFX_pink_noise_buffer[0] = 0.99886 * self.SFX_pink_noise_buffer[0] + ntemp * 0.0555179
+                    self.SFX_pink_noise_buffer[1] = 0.99332 * self.SFX_pink_noise_buffer[1] + ntemp * 0.0750759
+                    self.SFX_pink_noise_buffer[2] = 0.96900 * self.SFX_pink_noise_buffer[2] + ntemp * 0.1538520
+                    self.SFX_pink_noise_buffer[3] = 0.86650 * self.SFX_pink_noise_buffer[3] + ntemp * 0.3104856
+                    self.SFX_pink_noise_buffer[4] = 0.55000 * self.SFX_pink_noise_buffer[4] + ntemp * 0.5329522
+                    self.SFX_pink_noise_buffer[5] = -0.7616 * self.SFX_pink_noise_buffer[5] + ntemp * 0.0168980
+                    curRandom = (self.SFX_pink_noise_buffer[0] + self.SFX_pink_noise_buffer[1] + self.SFX_pink_noise_buffer[2] + self.SFX_pink_noise_buffer[3] + self.SFX_pink_noise_buffer[4] + self.SFX_pink_noise_buffer[5] + self.SFX_pink_noise_buffer[6] + ntemp * 0.5362) / 7
+                    self.SFX_pink_noise_buffer[6] = ntemp * 0.115926
+                    prevfp=curfp
+                    sample=curRandom
+                elif self.wave_type==5: # brown noise
+                    curfp=self.phase*32/self.period
+                    #if curfp < prevfp:
+                    prevRandom=curRandom
+                    curRandom=clamp((curRandom+0.1*self.SFX_noise_buffer[<int>curfp]),-1.0,1.0)
+                    prevfp=curfp
+                    sample=curRandom
+                elif self.wave_type==6: # triangle
+                    if fp<=0.5: sample=2*fp-1
+                    else: sample=1-2*fp
+                elif self.wave_type==7: # breaker
+                    ntemp=(fp+sqrt(0.75))%1
+                    sample=-1.0+2*fabs(1-ntemp*ntemp*2)
+                elif self.wave_type==8: # absolute sine
+                    sample=fabs(sin(fp*PI))
                 # lp filter
                 pp=self.fltp
                 self.fltw*=self.fltw_d
@@ -363,12 +407,12 @@ cdef class SFXRWave(GenBits):
             Alength+=2
             dirty=0
         # whatever this loop does
-        while (abs(Temp[SLength])<=0.001 and SLength>1024):
+        while (fabs(Temp[SLength])<=0.001 and SLength>1024):
             SLength-=1
             Alength-=2
         # normalize and store final sample data
-        Sample_Div = abs(Sample_Max)
-        if abs(Sample_Min) > Sample_Div: Sample_Div = abs(Sample_Min)
+        Sample_Div = fabs(Sample_Max)
+        if fabs(Sample_Min) > Sample_Div: Sample_Div = fabs(Sample_Min)
         wf=io.BytesIO()
         # Now let's make a wave file to return
         wfw=wave.open(wf,'wb')
