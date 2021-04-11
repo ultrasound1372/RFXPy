@@ -365,12 +365,13 @@ cdef class SFXRWave(GenBits):
                     curfp=self.phase*32/self.period
                     #if curfp < prevfp:
                     prevRandom=curRandom
-                    curRandom=clamp((curRandom+0.1*self.SFX_noise_buffer[<int>curfp]),-1.0,1.0)
+                    curRandom=clamp((curRandom+0.01*self.SFX_noise_buffer[<int>curfp]),-1,1)
                     prevfp=curfp
                     sample=curRandom
                 elif self.wave_type==6: # triangle
-                    if fp<=0.5: sample=2*fp-1
-                    else: sample=1-2*fp
+                    if fp<=0.25: sample=4*fp
+                    elif fp<=0.75: sample=2-4*fp
+                    else: sample=-4+4*fp
                 elif self.wave_type==7: # breaker
                     ntemp=(fp+sqrt(0.75))%1
                     sample=-1.0+2*fabs(1-ntemp*ntemp*2)
