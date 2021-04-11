@@ -8,6 +8,7 @@ from libc cimport time
 from cpython.mem cimport PyMem_Malloc, PyMem_Realloc, PyMem_Free # So I'm not creating a humungus array on the stack
 import wave, io # To return a wave file as a bytestring
 import base64, struct # To pack and unpack the RFXGen structure format
+import binascii # for the exception raised by base64
 
 # We need some math functions, might as well get them from c.
 cdef extern from *:
@@ -62,7 +63,10 @@ cdef class GenBits:
         char SuperSample, Sample_Rate
     
     def load(self, encdata):
-        (self.wave_type, self.p_base_freq, self.p_freq_limit, self.p_freq_ramp, self.p_freq_dramp, self.p_duty, self.p_duty_ramp, self.p_vib_strength, self.p_vib_speed, self.p_vib_delay, self.p_env_attack, self.p_env_sustain, self.p_env_decay, self.p_env_punch, self.p_lpf_resonance, self.p_lpf_freq, self.p_lpf_ramp, self.p_hpf_freq, self.p_hpf_ramp, self.p_pha_offset, self.p_pha_ramp, self.p_repeat_speed, self.p_arp_speed, self.p_arp_mod, self.SuperSample, self.Sample_Rate)=GenBitsS.unpack(base64.b64decode(encdata))
+        try:
+            (self.wave_type, self.p_base_freq, self.p_freq_limit, self.p_freq_ramp, self.p_freq_dramp, self.p_duty, self.p_duty_ramp, self.p_vib_strength, self.p_vib_speed, self.p_vib_delay, self.p_env_attack, self.p_env_sustain, self.p_env_decay, self.p_env_punch, self.p_lpf_resonance, self.p_lpf_freq, self.p_lpf_ramp, self.p_hpf_freq, self.p_hpf_ramp, self.p_pha_offset, self.p_pha_ramp, self.p_repeat_speed, self.p_arp_speed, self.p_arp_mod, self.SuperSample, self.Sample_Rate)=GenBitsS.unpack(base64.b64decode(encdata))
+        except (binascii.Error, struct.error) as exc:
+            raise ValueError("Invalid data to be loaded by RFX") from exc
     
     def save(self):
         return base64.b64encode(GenBitsS.pack(self.wave_type, self.p_base_freq, self.p_freq_limit, self.p_freq_ramp, self.p_freq_dramp, self.p_duty, self.p_duty_ramp, self.p_vib_strength, self.p_vib_speed, self.p_vib_delay, self.p_env_attack, self.p_env_sustain, self.p_env_decay, self.p_env_punch, self.p_lpf_resonance, self.p_lpf_freq, self.p_lpf_ramp, self.p_hpf_freq, self.p_hpf_ramp, self.p_pha_offset, self.p_pha_ramp, self.p_repeat_speed, self.p_arp_speed, self.p_arp_mod, self.SuperSample, self.Sample_Rate))

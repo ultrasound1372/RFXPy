@@ -30,10 +30,13 @@ def undo():
     except IndexError:
         print("Nothing to undo.")
 def l(s):
-    g=RFX.SFXRWave()
-    g.load(s)
-    stack.append(g)
-    p()
+    try:
+        g=RFX.SFXRWave()
+        g.load(s)
+        stack.append(g)
+        p()
+    except ValueError:
+        print("Bad data")
 def w(name):
     try:
         f=open(name+'.wav','wb')
