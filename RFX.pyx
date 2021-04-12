@@ -42,7 +42,6 @@ GenBitsS=struct.Struct("<i23f2b")
 # Eventually we're going to have to encode an array of floats into 16-bit integers to plop into a wave file.
 pcm16=struct.Struct("<h")
 
-srand(<unsigned int>time.time(NULL))
 
 cpdef double Rnd(double a=1.0):
     return a*(<double>rand()/<double>RAND_MAX)
@@ -137,6 +136,7 @@ cdef class SFXRWave(GenBits):
         unsigned short SFX_LFSR
     
     def __cinit__(self):
+        srand(<unsigned int>time.time(NULL))
         self.SFX_phaser_buffer=<double*>PyMem_Malloc(1025*sizeof(double))
         if not self.SFX_phaser_buffer:
             raise MemoryError()
