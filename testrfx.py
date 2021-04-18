@@ -7,7 +7,7 @@ import sys
 from collections import deque
 App=wx.App()
 s=wx.adv.Sound()
-stack=deque()
+stack=deque(maxlen=5)
 def p():
     try:
         s.CreateFromData(stack[-1].Create())
@@ -44,3 +44,5 @@ def w(name):
         f.close()
     except IndexError:
         print("Nothing to write")
+def g():
+    return stack[-1]

@@ -10,7 +10,7 @@ import wave, io # To return a wave file as a bytestring
 import base64, struct # To pack and unpack the RFXGen structure format
 import binascii # for the exception raised by base64
 
-# We need some math functions, might as well get them from c.
+# We need some math functions and constants, might as well get them from c.
 cdef extern from *:
     """
     #define _USE_MATH_DEFINES
@@ -32,11 +32,14 @@ from libc.math cimport pow, sin, round, sqrt, abs, fabs, ceil, floor, isinf
 # pack structure
 GenBitsS=[
     struct.Struct("<i23f2B"), # version 0, RFXGen compatible
-    struct.Struct("<3sBi23f2B") # v1, supports wider wave_type range and includes header
+    struct.Struct("<3sBi23d2B") # v1, supports wider wave_type range, stores with doubles instead of floats, and includes header
     ]
 
 # Eventually we're going to have to encode an array of floats into 16-bit integers to plop into a wave file.
 pcm16=struct.Struct("<h")
+
+# to track the status of calls to srand, we only need the one.
+sranded=0
 
 cpdef double Rnd(double a=1.0) nogil:
     return a*(<double>rand()/<double>RAND_MAX)
@@ -99,11 +102,8 @@ cdef class GenBits:
         except NewerDataError as exc: raise exc
     
     def save(self):
-        values=(self.wave_type, self.p_base_freq, self.p_freq_limit, self.p_freq_ramp, self.p_freq_dramp, self.p_duty, self.p_duty_ramp, self.p_vib_strength, self.p_vib_speed, self.p_vib_delay, self.p_env_attack, self.p_env_sustain, self.p_env_decay, self.p_env_punch, self.p_lpf_resonance, self.p_lpf_freq, self.p_lpf_ramp, self.p_hpf_freq, self.p_hpf_ramp, self.p_pha_offset, self.p_pha_ramp, self.p_repeat_speed, self.p_arp_speed, self.p_arp_mod, self.SuperSample, self.Sample_Rate)
-        version=1
-        if values[0]<=3: version=0
-        if version>=1: values=(B'FXP', version)+values
-        return base64.b64encode(GenBitsS[version].pack(*values)).decode('ascii')
+        values=(b'FXP', len(GenBitsS)-1, self.wave_type, self.p_base_freq, self.p_freq_limit, self.p_freq_ramp, self.p_freq_dramp, self.p_duty, self.p_duty_ramp, self.p_vib_strength, self.p_vib_speed, self.p_vib_delay, self.p_env_attack, self.p_env_sustain, self.p_env_decay, self.p_env_punch, self.p_lpf_resonance, self.p_lpf_freq, self.p_lpf_ramp, self.p_hpf_freq, self.p_hpf_ramp, self.p_pha_offset, self.p_pha_ramp, self.p_repeat_speed, self.p_arp_speed, self.p_arp_mod, self.SuperSample, self.Sample_Rate)
+        return base64.b64encode(GenBitsS[-1].pack(*values)).decode('ascii')
     
     cpdef ResetParams(self):
         self.SuperSample=8
@@ -171,7 +171,10 @@ cdef class SFXRWave(GenBits):
         unsigned short SFX_LFSR
     
     def __cinit__(self):
-        srand(<unsigned int>time.time(NULL))
+        global sranded
+        if sranded==0:
+            srand(<unsigned int>time.time(NULL))
+            sranded=1
         self.SFX_phaser_buffer=<double*>PyMem_Malloc(1025*sizeof(double))
         if not self.SFX_phaser_buffer:
             raise MemoryError()
@@ -181,7 +184,7 @@ cdef class SFXRWave(GenBits):
     
     @classmethod
     def randomize(cls):
-        cdef ret=cls()
+        ret=cls()
         ret.load(super().randomize().save())
         return ret
     
