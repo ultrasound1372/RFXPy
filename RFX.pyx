@@ -119,7 +119,7 @@ cdef class GenBits:
     @classmethod
     def randomize(cls):
         cdef GenBits ret=cls()
-        ret.wave_type=<int>round(Rnd(3))
+        ret.wave_type=<int>round(Rnd(ret.max_wave_type))
         ret.p_base_freq=pow(Rnd(2.0)-1.0,2.0)
         if RndBool():
             ret.p_base_freq=pow(Rnd(2.0)-1.0,3.0)+0.5
