@@ -1,0 +1,4 @@
+cython>=3.0.0a1
+wxpython>=4.1.0
+pypubsub
+clipboard
