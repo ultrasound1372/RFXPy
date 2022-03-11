@@ -189,8 +189,8 @@ cdef class SFXRWave(GenBits):
         return ret
     
     @classmethod
-    cpdef fromGenBits(cls,gb):
-        cdef SFXRWave ret=cls()
+    def fromGenBits(cls,gb):
+        ret=cls()
         ret.load(gb.save())
         return ret
     
