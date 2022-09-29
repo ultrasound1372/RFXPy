@@ -1,13 +1,15 @@
 #! /usr/bin/env python3
 # -*- Coding: UTF-8 -*-
 
-import threading
 import queue
+import threading
 import time
+from collections import deque, namedtuple
+
 import wx
 import wx.adv
 from pubsub import pub
-from collections import deque, namedtuple
+
 import RFX
 
 synthcall=queue.Queue()
@@ -142,3 +144,82 @@ App=wx.App()
 st=SynthThread()
 synthcall.put('randomize')
 st.start()
+
+class FloatSlider(wx.Slider): 
+    def __init__(self, parent, sizer, attribute): 
+        super().__init__(parent, value = 50)
+        self.label = wx.TextCtrl(parent, label = attribute)
+        sizer.add(self.label)
+        sizer.add(self)
+        self.attribute = attribute
+        self.Bind(wx.EVT_SLIDER, self.on_scroll)
+    def on_scroll(self, e): 
+        value = self.getValue()/50-1.0
+        synthcall.put(("change", {self.attribute: value}))
+
+class MainWindow(wx.Frame): 
+    def __init__(self): 
+        wx.Frame.__init__(self, None, title = "Retroar FX Generator")
+        p = wx.Panel(self)
+        box = wx.BoxSizer()
+        master= wx.StaticBoxSizer(wx.HORIZONTAL, p, label = "Master Controls")
+        box.Add(master)
+        self.masterbox= master.GetStaticBox()
+        self.randombtn = wx.Button(self.masterbox, label = "&Random")
+        master.Add(self.randombtn)
+        self.randombtn.Bind(wx.EVT_BUTTON, self.on_random)
+        self.playbtn = wx.Button(self.masterbox, label = "&Play")
+        master.add(self.playbtn)
+        self.playbtn.Bind(wx.EVT_BUTTON, self.on_play)
+        self.mutatebtn = wx.Button(self.masterbox, label = "&Mute")
+        master.Add(self.mutatebtn)
+        self.mutatebtn.Bind(wx.EVT_BUTTON, self.on_mutate)
+        imp = wx.StaticBoxSizer(wx.HORIZONTAL, p, label = "Import/Export")
+        box.Add(imp)
+        self.impbox = imp.GetStaticBox()
+        self.loadbtn = wx.Button(self.impbox, label = "&Load")
+        imp.Add(self.loadbtn)
+        self.loadbtn.Bind(wx.EVT_BUTTON, self.on_load)
+        self.savebtn = wx.Button(self.impbox, label = "&Save")
+        imp.Add(self.loadbtn)
+        self.loadbtn.Bind(wx.EVT_BUTTON, self.on_save)
+        self.savewavbtn = wx.Button(self.impbox, label = "Save &Wav")
+        imp.Add(self.savewavbtn)
+        self.savewavbtn.Bind(wx.EVT_BUTTON, self.on_savewav)
+        self.loadclipbtn = wx.Button(self.impbox, label = "L&oad from Clipboard")
+        imp.Add(self.loadclipbtn)
+        self.loadclipbtn.Bind(wx.EVT_BUTTON, self.on_loadclip)
+        self.saveclipbtn = wx.Button(self.impbox, label = "Save to &Clipboard")
+        imp.Add(self.saveclipbtn)
+        self.saveclipbtn.Bind(wx.EVT_BUTTON, self.on_saveclip)
+        presets_lable = wx.StaticText(p, label = "Presets")
+        box.Add(presets_lable)
+        self.presets = wx.Choice(p, choices = [
+            "Coin", 
+            "Laser", 
+            "Explosion", 
+            "Powerup", 
+            "Hit", 
+            "Jump", 
+            "Blip", 
+        ])
+        box.Add(self.presets)
+        self.presets.Bind(wx.EVT_CHOICE, self.on_preset)
+        wavetype_label = wx.StaticText(p, label = "Wave Type")
+        box.Add(wavetype_label)
+        self.wavetype = wx.Choice(p, choices = [
+            "Square", 
+            "Saw", 
+            "Sine", 
+            "white noise", 
+            "pink noise", 
+            "brown noise", 
+            "triangle", 
+            "breaker", 
+            "absolute sine", 
+        ])
+        self.wavetype.Bind(wx.EVT_CHOICE, self.on_wavetype)
+        
+frame = MainWindow()
+frame.show()
+App.MainLoop()
